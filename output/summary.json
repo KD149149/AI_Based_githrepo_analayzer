@@ -1,0 +1,24 @@
+{
+    "repo_name": "cloned_repo",
+    "language_detected": [
+        "py",
+        "unknown",
+        "md",
+        "txt"
+    ],
+    "architecture_type": "monolith",
+    "top_security_risks": [],
+    "top_performance_risks": [
+        {
+            "issue": "Missing pagination",
+            "severity": "Medium"
+        }
+    ],
+    "roadmap": [
+        {
+            "priority": "P0",
+            "task": "Move secrets to env vars",
+            "effort": "2 hours"
+        }
+    ]
+}
