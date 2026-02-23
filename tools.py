@@ -1,87 +1,65 @@
 import os
 import re
-import json
-import subprocess
-from config import IGNORE_DIRS, MAX_FILE_SIZE_MB
-
-
-from git import Repo
-import os
 import shutil
+from git import Repo
+
+
+# -------- Clone Repository --------
 
 def clone_repo(repo_url):
     target_dir = "cloned_repo"
 
     if os.path.exists(target_dir):
-        print("Deleting old repo and cloning fresh...")
         shutil.rmtree(target_dir)
 
-    print("Cloning repository...")
     Repo.clone_from(repo_url, target_dir)
-
     return target_dir
 
 
+# -------- Scan Repository --------
 
+def scan_repository(repo_path):
+    files_data = []
 
-def is_valid_file(file_path):
-    if any(part in IGNORE_DIRS for part in file_path.split(os.sep)):
-        return False
-    if os.path.getsize(file_path) > MAX_FILE_SIZE_MB * 1024 * 1024:
-        return False
-    return True
-
-
-def scan_repository(path):
-    file_data = []
-    languages = {}
-
-    for root, dirs, files in os.walk(path):
-        dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
-
+    for root, _, files in os.walk(repo_path):
         for file in files:
-            full_path = os.path.join(root, file)
-            if not is_valid_file(full_path):
-                continue
+            if file.endswith((".py", ".js", ".ts", ".env", ".txt")):
+                file_path = os.path.join(root, file)
 
-            ext = file.split(".")[-1] if "." in file else "unknown"
-            languages[ext] = languages.get(ext, 0) + 1
+                try:
+                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        content = f.read()
 
-            try:
-                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read()
-            except:
-                content = ""
+                    files_data.append({
+                        "file_path": file_path,
+                        "content_snippet": content[:1000]  # limit to first 1000 chars
+                    })
 
-            file_data.append({
-                "path": full_path,
-                "extension": ext,
-                "content_snippet": content[:2000]
-            })
+                except Exception:
+                    continue
 
-    return {
-        "total_files": len(file_data),
-        "languages": languages,
-        "files": file_data
-    }
+    return files_data
 
 
-def find_hardcoded_secrets(files):
+# -------- Secret Detection --------
+
+def find_hardcoded_secrets(repo_path):
     patterns = [
-        r'api_key\s*=\s*["\'].*["\']',
-        r'password\s*=\s*["\'].*["\']',
-        r'JWT_SECRET\s*=\s*["\'].*["\']'
+        r"api_key\s*=\s*['\"].+['\"]",
+        r"secret\s*=\s*['\"].+['\"]",
+        r"password\s*=\s*['\"].+['\"]",
+        r"token\s*=\s*['\"].+['\"]"
     ]
 
-    issues = []
+    files_data = scan_repository(repo_path)
+    detected = []
 
-    for file in files:
+    for file in files_data:
         for pattern in patterns:
             if re.search(pattern, file["content_snippet"], re.IGNORECASE):
-                issues.append({
-                    "issue": "Hardcoded secret detected",
-                    "file": file["path"],
-                    "severity": "High"
+                detected.append({
+                    "file": file["file_path"],
+                    "pattern": pattern
                 })
 
-    return issues
+    return detected

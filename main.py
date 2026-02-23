@@ -1,60 +1,77 @@
+
+
 import argparse
-from crewai import Task, Crew
-from agents import (
-    create_scanner_agent,
-    create_architecture_agent,
-    create_security_agent,
-    create_performance_agent,
-    create_roadmap_agent
-)
+import os
+import json
+
 from tools import clone_repo, scan_repository, find_hardcoded_secrets
-from report_generator import generate_markdown, generate_json
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--repo", type=str, help="GitHub repo URL")
-    parser.add_argument("--path", type=str, help="Local repo path")
+    parser = argparse.ArgumentParser(description="AI Repo Analyzer")
+
+    parser.add_argument(
+        "--repo",
+        type=str,
+        help="GitHub repository URL"
+    )
+
+    parser.add_argument(
+        "--path",
+        type=str,
+        help="Local project folder path"
+    )
+
     args = parser.parse_args()
 
+    # Validate input
+    if not args.repo and not args.path:
+        print("Error: Please provide either --repo or --path")
+        return
+
+    # Determine source
     if args.repo:
+        print("Using remote repository...")
         repo_path = clone_repo(args.repo)
-    elif args.path:
-        repo_path = args.path
     else:
-        raise ValueError("Provide --repo or --path")
+        print("Using local project path...")
+        if not os.path.exists(args.path):
+            print("Error: Provided path does not exist.")
+            return
+        repo_path = args.path
 
-    scan_result = scan_repository(repo_path)
+    # Run analysis
+    print("Scanning repository...")
+    files_data = scan_repository(repo_path)
 
-    security_issues = find_hardcoded_secrets(scan_result["files"])
+    print("Detecting hardcoded secrets...")
+    secrets = find_hardcoded_secrets(repo_path)
 
-    architecture_summary = "Monolith architecture detected based on single entry pattern."
-    performance_summary = "Potential lack of pagination in API endpoints."
-    roadmap = "P0: Move secrets to environment variables.\nP1: Add pagination."
+    # Ensure output folder exists
+    os.makedirs("output", exist_ok=True)
 
-    report_data = {
-        "total_files": scan_result["total_files"],
-        "architecture": architecture_summary,
-        "security": str(security_issues),
-        "performance": performance_summary,
-        "roadmap": roadmap
+    # Generate report.md
+    report_path = os.path.join("output", "report.md")
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write("# Repository Analysis Report\n\n")
+        f.write(f"Total Files Scanned: {len(files_data)}\n\n")
+        f.write(f"Potential Secrets Found: {len(secrets)}\n\n")
+
+        if secrets:
+            f.write("## Detected Secrets\n")
+            for secret in secrets:
+                f.write(f"- {secret}\n")
+
+    # Generate summary.json
+    summary = {
+        "total_files": len(files_data),
+        "secrets_found": len(secrets),
+        "secret_details": secrets
     }
 
-    summary_json = {
-        "repo_name": repo_path,
-        "language_detected": list(scan_result["languages"].keys()),
-        "architecture_type": "monolith",
-        "top_security_risks": security_issues,
-        "top_performance_risks": [
-            {"issue": "Missing pagination", "severity": "Medium"}
-        ],
-        "roadmap": [
-            {"priority": "P0", "task": "Move secrets to env vars", "effort": "2 hours"}
-        ]
-    }
-
-    generate_markdown(report_data)
-    generate_json(summary_json)
+    summary_path = os.path.join("output", "summary.json")
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=4)
 
     print("Analysis complete. See output/report.md and output/summary.json")
 
